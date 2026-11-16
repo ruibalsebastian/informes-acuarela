@@ -6,6 +6,7 @@ from datetime import datetime
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(
     page_title="Generador de Informes - Instituto Acuarela (A-1090)",
@@ -42,7 +43,35 @@ ALL_AREAS = [
     "Objetivos para el próximo año"
 ]
 
-if "reports_db" not in st.session_state:
+# Conexión a Google Sheets
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Cargar datos desde Google Sheets (o iniciar vacío si la planilla está vacía)
+try:
+    df_db = conn.read(worksheet="Informes", ttl=0)
+    if df_db.empty:
+        reports_db = []
+    else:
+        # Reconstruir la base de datos desde el DataFrame de Google Sheets
+        reports_db = []
+        for _, row in df_db.iterrows():
+            try:
+                reports_db.append({
+                    "id": int(row["id"]),
+                    "nombre": str(row["nombre"]),
+                    "dni": str(row["dni"]),
+                    "grupo": str(row["grupo"]),
+                    "nivel": str(row["nivel"]),
+                    "tipo_informe": str(row["tipo_informe"]),
+                    "fecha": str(row["fecha"]),
+                    "status": str(row["status"]),
+                    "updated_at": str(row["updated_at"]),
+                    "areas": json.loads(row["areas_json"])
+                })
+            except Exception:
+                continue
+    st.session_state.reports_db = reports_db
+except Exception as e:
     st.session_state.reports_db = []
 
 if "current_report" not in st.session_state:
@@ -62,7 +91,7 @@ if "current_report" not in st.session_state:
 st.markdown("""
     <div class="main-header">
         <h1 style="margin:0; font-size: 1.75rem;">Instituto Acuarela (A-1090)</h1>
-        <p style="margin:0; color: #cffafe; font-size: 0.95rem;">Sistema Integrado de Informes Pedagógicos Colaborativos</p>
+        <p style="margin:0; color: #cffafe; font-size: 0.95rem;">Sistema Integrado de Informes Pedagógicos Colaborativos en la Nube</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -91,7 +120,7 @@ with st.sidebar:
             st.error(f"Error al leer el Excel: {e}")
 
     st.divider()
-    st.subheader(f"Borradores Registrados ({len(st.session_state.reports_db)})")
+    st.subheader(f"Borradores en la Nube ({len(st.session_state.reports_db)})")
     
     search_query = st.text_input("🔍 Buscar por Alumno o DNI", placeholder="Escribe nombre...")
     filtered_reports = st.session_state.reports_db
@@ -99,7 +128,7 @@ with st.sidebar:
         filtered_reports = [r for r in st.session_state.reports_db if search_query.lower() in r["nombre"].lower() or search_query in r["dni"]]
     
     if not filtered_reports:
-        st.info("No hay borradores guardados.")
+        st.info("No hay registros en la nube.")
     else:
         for r in filtered_reports:
             badge_color = "🟢" if r["status"] == "Finalizado" else "🟠"
@@ -186,14 +215,35 @@ with st.form("report_form"):
                 "areas": updated_areas
             }
             
-            existing_idx = next((i for i, r in enumerate(st.session_state.reports_db) if r["id"] == record_id), None)
+            # Actualizar en la lista local y guardar en Google Sheets
+            db_list = st.session_state.reports_db
+            existing_idx = next((i for i, r in enumerate(db_list) if r["id"] == record_id), None)
             if existing_idx is not None:
-                st.session_state.reports_db[existing_idx] = saved_record
+                db_list[existing_idx] = saved_record
             else:
-                st.session_state.reports_db.insert(0, saved_record)
+                db_list.insert(0, saved_record)
                 
+            # Convertir toda la base a DataFrame para guardarla en Google Sheets
+            rows_to_save = []
+            for r in db_list:
+                rows_to_save.append({
+                    "id": r["id"],
+                    "nombre": r["nombre"],
+                    "dni": r["dni"],
+                    "grupo": r["grupo"],
+                    "nivel": r["nivel"],
+                    "tipo_informe": r["tipo_informe"],
+                    "fecha": r["fecha"],
+                    "status": r["status"],
+                    "updated_at": r["updated_at"],
+                    "areas_json": json.dumps(r["areas"])
+                })
+            
+            df_to_write = pd.DataFrame(rows_to_save)
+            conn.update(worksheet="Informes", data=df_to_write)
+            
             st.session_state.current_report = saved_record
-            st.success(f"¡{status_val} guardado y sincronizado exitosamente a las {now_str}!")
+            st.success(f"¡{status_val} guardado y sincronizado en la nube a las {now_str}!")
 
 st.markdown("---")
 st.subheader("📥 Exportación de Documento Oficial")
@@ -244,7 +294,7 @@ def generate_word_document(report_data):
     doc.add_paragraph("_________________________________________________________________________________")
 
     for area_name, content in report_data["areas"].items():
-        if content["texto"].append or content["docente"].strip() or content["texto"].strip():
+        if content["texto"].strip() or content["docente"].strip():
             h2 = doc.add_heading(area_name, level=2)
             h2.style.font.name = "Arial"
             
@@ -256,7 +306,7 @@ def generate_word_document(report_data):
             
             if content["texto"].strip():
                 p_txt = doc.add_paragraph(content["texto"])
-                p_txt.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                p_txt.alignment = WD_ALIGN_PARAGRAPH.JUSTIFIED
                 p_txt.paragraph_format.line_spacing = 1.15
 
     doc.add_paragraph()
