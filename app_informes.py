@@ -6,7 +6,6 @@ from datetime import datetime
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.style import WD_STYLE_TYPE
 
 # Configuración de la página
 st.set_page_config(
@@ -16,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS personalizados para replicar la interfaz limpia y profesional
+# Estilos CSS personalizados
 st.markdown("""
     <style>
     .main-header {
@@ -25,13 +24,6 @@ st.markdown("""
         padding: 1.5rem;
         border-radius: 0.75rem;
         margin-bottom: 2rem;
-    }
-    .report-card {
-        background-color: white;
-        padding: 2rem;
-        border-radius: 1rem;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        border: 1px solid #e2e8f0;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -53,7 +45,7 @@ ALL_AREAS = [
     "Objetivos para el próximo año"
 ]
 
-# Inicializar almacenamiento en session_state simulando una base de datos local / nube temporal
+# Inicializar estado de sesión
 if "reports_db" not in st.session_state:
     st.session_state.reports_db = []
 
@@ -75,22 +67,20 @@ if "current_report" not in st.session_state:
 st.markdown("""
     <div class="main-header">
         <h1 style="margin:0; font-size: 1.75rem;">Instituto Acuarela (A-1090)</h1>
-        <p style="margin:0; color: #cffafe; font-size: 0.95rem;">Sistema Integrado de Generación de Informes Pedagógicos en la Nube</p>
+        <p style="margin:0; color: #cffafe; font-size: 0.95rem;">Sistema Integrado de Informes Pedagógicos Colaborativos</p>
     </div>
 """, unsafe_allow_html=True)
 
-# Sidebar: Gestor de Borradores y Carga de Excel
+# Sidebar: Gestión y Carga
 with st.sidebar:
     st.header("📂 Gestión y Archivos")
     
-    # 1. Cargar Excel Base
     uploaded_excel = st.file_uploader("Cargar Excel Base (Alumnos)", type=["xlsx", "xls"])
     if uploaded_excel:
         try:
             xls = pd.ExcelFile(uploaded_excel)
             df = pd.read_excel(xls, sheet_name=0, header=None)
             st.success("¡Excel cargado correctamente!")
-            # Extracción simple de ejemplo basada en la estructura previa
             sample_nombre = str(df.iloc[12, 1]) if df.shape[0] > 12 and df.shape[1] > 1 else "De la Vega, Diego"
             sample_dni = str(df.iloc[14, 1]) if df.shape[0] > 14 and df.shape[1] > 1 else "45875951"
             
@@ -107,24 +97,21 @@ with st.sidebar:
             st.error(f"Error al leer el Excel: {e}")
 
     st.divider()
-    
-    # 2. Panel de Borradores / Avances Guardados
-    st.subheader(f"Mis Borradores ({len(st.session_state.reports_db)})")
+    st.subheader(f"Borradores Registrados ({len(st.session_state.reports_db)})")
     
     search_query = st.text_input("🔍 Buscar por Alumno o DNI", placeholder="Escribe nombre...")
-    
     filtered_reports = st.session_state.reports_db
     if search_query:
         filtered_reports = [r for r in st.session_state.reports_db if search_query.lower() in r["nombre"].lower() or search_query in r["dni"]]
     
     if not filtered_reports:
-        st.info("No hay borradores guardados todavía.")
+        st.info("No hay borradores guardados.")
     else:
         for r in filtered_reports:
             badge_color = "🟢" if r["status"] == "Finalizado" else "🟠"
             col_a, col_b = st.columns([3, 1])
             with col_a:
-                st.markdown(f"**{badge_color} {r['nombre']}**<br><span style='font-size:0.8rem; color:gray;'>DNI: {r['dni']} ({r['fecha']})</span>", unsafe_allow_html=True)
+                st.markdown(f"**{badge_color} {r['nombre']}**<br><span style='font-size:0.8rem; color:gray;'>DNI: {r['dni']}</span>", unsafe_allow_html=True)
             with col_b:
                 if st.button("Retomar", key=f"load_{r['id']}"):
                     st.session_state.current_report = r.copy()
@@ -133,21 +120,13 @@ with st.sidebar:
     st.divider()
     if st.button("➕ Nuevo Informe / Limpiar", type="secondary"):
         st.session_state.current_report = {
-            "id": None,
-            "nombre": "",
-            "dni": "",
-            "grupo": "",
-            "nivel": "",
-            "tipo_informe": "Final",
-            "fecha": "Noviembre 2027",
-            "status": "Borrador",
-            "updated_at": "",
+            "id": None, "nombre": "", "dni": "", "grupo": "", "nivel": "",
+            "tipo_informe": "Final", "fecha": "Noviembre 2027", "status": "Borrador", "updated_at": "",
             "areas": {area: {"texto": "", "docente": ""} for area in ALL_AREAS}
         }
         st.rerun()
 
 # --- CUERPO PRINCIPAL DEL FORMULARIO ---
-
 st.markdown("### Datos de Identificación del Alumno")
 
 with st.form("report_form"):
@@ -175,7 +154,6 @@ with st.form("report_form"):
     st.markdown("---")
     st.markdown("### Redacción de Áreas Pedagógicas")
 
-    # Contenedor de áreas
     updated_areas = {}
     for idx, area_name in enumerate(ALL_AREAS):
         st.markdown(f"#### Área {idx + 1}: {area_name}")
@@ -188,7 +166,6 @@ with st.form("report_form"):
         updated_areas[area_name] = {"texto": texto_val, "docente": docente_val}
         st.markdown("<br>", unsafe_allow_html=True)
 
-    # Botones de Acción de Guardado
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         submit_draft = st.form_submit_button("💾 Guardar Avance / Borrador", use_container_width=True)
@@ -196,7 +173,6 @@ with st.form("report_form"):
         submit_final = st.form_submit_button("✔️ Guardar como Finalizado", use_container_width=True)
 
     if submit_draft or submit_final:
-        # Validación obligatoria de datos del alumno
         if not nombre_input.strip() or not dni_input.strip() or not grupo_input.strip() or not nivel_input.strip():
             st.error("⚠️ No se permite el guardado por falta de datos del alumno")
         else:
@@ -217,7 +193,6 @@ with st.form("report_form"):
                 "areas": updated_areas
             }
             
-            # Actualizar o insertar en la lista global de reportes
             existing_idx = next((i for i, r in enumerate(st.session_state.reports_db) if r["id"] == record_id), None)
             if existing_idx is not None:
                 st.session_state.reports_db[existing_idx] = saved_record
@@ -225,7 +200,7 @@ with st.form("report_form"):
                 st.session_state.reports_db.insert(0, saved_record)
                 
             st.session_state.current_report = saved_record
-            st.success(f"¡{status_val} guardado exitosamente a las {now_str}!")
+            st.success(f"¡{status_val} guardado y sincronizado exitosamente a las {now_str}!")
 
 # --- SECCIÓN DE EXPORTACIÓN A WORD (.docx) ---
 st.markdown("---")
@@ -233,23 +208,19 @@ st.subheader("📥 Exportación de Documento Oficial")
 
 def generate_word_document(report_data):
     doc = Document()
-    
-    # Configuración de márgenes y estilos base
-    sections = doc.sections
-    for section in sections:
+    for section in doc.sections:
         section.top_margin = Inches(1)
         section.bottom_margin = Inches(1)
         section.left_margin = Inches(1)
         section.right_margin = Inches(1)
 
-    # Encabezado Institucional
     p_title = doc.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r_title = p_title.add_run("INSTITUTO ACUARELA (A-1090)")
     r_title.bold = True
     r_title.font.name = "Arial"
     r_title.font.size = Pt(14)
-    r_title.font.color.rgb = RGBColor(14, 116, 144) # Cian institucional
+    r_title.font.color.rgb = RGBColor(14, 116, 144)
 
     p_sub = doc.add_paragraph()
     p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -258,9 +229,8 @@ def generate_word_document(report_data):
     r_sub.font.size = Pt(9)
     r_sub.font.color.rgb = RGBColor(100, 116, 139)
 
-    doc.add_paragraph() # Espacio
+    doc.add_paragraph()
 
-    # Metadatos del alumno
     p_meta1 = doc.add_paragraph()
     p_meta1.add_run("Tipo de Informe: ").bold = True
     p_meta1.add_run(f"{report_data['tipo_informe']}    |    ")
@@ -281,7 +251,6 @@ def generate_word_document(report_data):
 
     doc.add_paragraph("_________________________________________________________________________________")
 
-    # Áreas
     for area_name, content in report_data["areas"].items():
         if content["texto"].strip() or content["docente"].strip():
             h2 = doc.add_heading(area_name, level=2)
@@ -298,7 +267,6 @@ def generate_word_document(report_data):
                 p_txt.alignment = WD_ALIGN_PARAGRAPH.JUSTIFIED
                 p_txt.paragraph_format.line_spacing = 1.15
 
-    # Pie institucional
     doc.add_paragraph()
     p_foot1 = doc.add_paragraph()
     p_foot1.alignment = WD_ALIGN_PARAGRAPH.CENTER
